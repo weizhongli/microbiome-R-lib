@@ -79,12 +79,31 @@ mycol.s0 <- function(topn, pal.set = "Dark2") {
 #### Set1, Set2, Set3, Dark2, Accent
 mycol <- function(topn, pal.set = "Dark2") {
   n = brewer.pal.info[pal.set, "maxcolors"]
-  m = as.integer(topn / n) + c(1,0)[ as.integer( topn%%n > 0) ]
+  m = as.integer(topn / n) + c(1,0)[ 1+ as.integer( topn%%n > 0) ]
   topn1 = m * n
   getPalette = colorRampPalette(brewer.pal(n, pal.set))
   col1 = getPalette( topn1 )
   col1 = col1 %>% matrix(ncol=n) %>% t() %>% as.vector()
   col1[1:topn]
+}
+
+#### given a vector x, retunr a vector of colors,
+#### same feature will have same color
+feature_2_col <- function(x, pal.set = "Dark2") {
+  tib1 = tibble(id = x)
+  tib2 = tibble(id = unique(x)) %>% arrange(id) %>% mutate(n = row_number())
+  topn = nrow(tib2)
+  
+  n = brewer.pal.info[pal.set, "maxcolors"]
+  m = as.integer(topn / n) + c(1,0)[ 1+ as.integer( topn%%n > 0) ]
+  topn1 = m * n
+  getPalette = colorRampPalette(brewer.pal(n, pal.set))
+  col1 = getPalette( topn1 )
+  col1 = col1 %>% matrix(ncol=n) %>% t() %>% as.vector()
+  
+  tib2 = tib2 %>% mutate(col = col1[1:topn])
+  tib1 = tib1 %>% inner_join(tib2)
+  tib1$col
 }
 
 
