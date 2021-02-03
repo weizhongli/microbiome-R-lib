@@ -79,7 +79,7 @@ mycol.s0 <- function(topn, pal.set = "Dark2") {
 #### Set1, Set2, Set3, Dark2, Accent
 mycol <- function(topn, pal.set = "Dark2") {
   n = brewer.pal.info[pal.set, "maxcolors"]
-  m = as.integer(topn / n) + c(1,0)[ 1+ as.integer( topn%%n > 0) ]
+  m = 1 + as.integer(topn / n) + c(1,0)[ 1+ as.integer( topn%%n > 0) ]
   topn1 = m * n
   getPalette = colorRampPalette(brewer.pal(n, pal.set))
   col1 = getPalette( topn1 )
@@ -95,7 +95,7 @@ feature_2_col <- function(x, pal.set = "Dark2") {
   topn = nrow(tib2)
   
   n = brewer.pal.info[pal.set, "maxcolors"]
-  m = as.integer(topn / n) + c(1,0)[ 1+ as.integer( topn%%n > 0) ]
+  m = 1 + as.integer(topn / n) + c(1,0)[ 1+ as.integer( topn%%n > 0) ]
   topn1 = m * n
   getPalette = colorRampPalette(brewer.pal(n, pal.set))
   col1 = getPalette( topn1 )
@@ -712,10 +712,30 @@ read_taxon_tibble_16S <- function (dir, ranks=c("phylum", "genus", "species"), c
 
 #### return short name e.g. Escherichia coli => E. coli
 #### input: vector of character
+#### short_species_name
 red_species_name <- function (x) {
   x = gsub("\\[|\\]", "", x, perl=T)  #### remove []
   gsub("^(.)\\S+ ","\\1.",x, perl=T)
 }
+
+#### when genus has NA in it
+#### change it to "unnamed_genus_in_phylum_name"
+taxon_fill_genus <- function(phylum, genus) {
+  ifelse(is.na(genus), paste("unnamed_genus_in_", phylum, sep=""), genus)
+}
+#### given a list of taxa, merge less frequent taxa into one group called group.name
+#### so that total number of distinct taxa is topn
+#### e.g. taxon_merge_misc(genus, 10, "other_genera")
+taxon_merge_misc <- function(genus, topn, group.name) {
+  x = tibble(id = genus)
+  x1 = x %>% group_by(id) %>% summarise(n=length(id), .groups="drop_last") 
+  x = x %>% inner_join(x1) %>% arrange(desc(n)) %>% select(1)
+  x1 = x %>% group_by(id) %>% filter(row_number()==1) %>% ungroup() %>% mutate(idx = row_number())
+  x = x %>% inner_join(x1) 
+  x = x %>% mutate(new.id = ifelse(x$idx >= topn, group.name, x$id ))
+  x$new.id
+}
+
 
 
 #### given a feature table
@@ -826,6 +846,17 @@ scale_feature_with_unmapped <- function(x, r) {
   mat = matrix(rep(r, ncol(x)-1), nrow=n.sample)
   y[, 2:ncol(x)] = (y %>% select(-1)) * mat
   y
+}
+
+
+#### given a taxon tibble, first column is sample, other cols are features
+#### the values are abundance
+#### this function convert the abundance to rank, higher abundance -> lower rank (in front)
+####
+feature_abs_to_rank <- function(x) {
+  y = x %>% dplyr::select(-1) %>% apply(1, rank) %>% t()
+  y = y %>% apply(1, rev) %>% t()
+  x %>% dplyr::select(1) %>% cbind(y) %>% as_tibble()
 }
 
 
@@ -1381,11 +1412,12 @@ tibble_t <- function(x, key.name="name") {
 }
 
 #### tibble to data.frame, use first column of input as rownames of df
-tibble_2_df <- function(x) {
-  colnames(x)[1] = "UUID"
-  df.n = x$UUID
-  y = x %>% dplyr::select(-1) %>% as.data.frame()
-  rownames(y) = df.n
+#### col_for_row_name, use this column as the rowname for output df
+tibble_2_df <- function(x, col_for_row_name = NULL) {
+  if (is.null(col_for_row_name) ) col_for_row_name = colnames(x)[1]
+  new.rownames = x[[col_for_row_name]]
+  y = x %>% dplyr::select(-all_of(col_for_row_name)) %>% as.data.frame()
+  rownames(y) = new.rownames
   y
 }
 
@@ -1426,7 +1458,7 @@ rf.test <- function(y, x, x1, disease_class = "Disease", topN_feature=30, rf.ntr
   df.features = importance(df.rf)
   df.features = as_tibble(df.features) %>% mutate(feature = rownames(df.features)) %>% arrange(-MeanDecreaseGini)
 
-  pred_f = function(fit, x) { predict(fit, x, type="prob")[,2] }
+  pred_f <- function(fit, x) { predict(fit, x, type="prob")[,2] }
   pred <- prediction(pred_f(df.rf, df.val), as.numeric(df.val[,"TARGET"]))
   perf <- performance(pred, "tpr", "fpr" )
   AUC  <- performance(pred,"auc")@y.values[[1]]
@@ -1449,7 +1481,7 @@ rf.test <- function(y, x, x1, disease_class = "Disease", topN_feature=30, rf.ntr
 
 
 #### make hclust opject for species or genus
-taxonomy_2_hclust = function(x, d.max=0.8) {
+taxonomy_2_hclust <- function(x, d.max=0.8) {
   colnames(x)[1] = 'TARGET'
   org = x$TARGET
   col.names = colnames(x)
@@ -1504,7 +1536,7 @@ taxonomy_2_hclust = function(x, d.max=0.8) {
 #### kegg1      super_pathwayA	sub_pathwayX
 #### kegg1      super_pathwayA	sub_pathwayY
 #### kegg1      super_pathwayA	sub_pathwayX
-feature_2_hclust = function(x) {
+feature_2_hclust <- function(x) {
   colnames(x)[1] = 'TARGET'
   org = x$TARGET
   col.names = colnames(x)
@@ -1543,7 +1575,7 @@ feature_2_hclust = function(x) {
 #### return tibble cols: name, bin, rep, dist to rep
 #### pre_seed, can be vector of a list of pre-selected representatives
 #### pre_order, tibble, first column is name, ordered, so that front are selected as seeds
-dist_2_cluster = function(x, cutoff.d = NA, cutoff.k = NA, pre_seed=NULL, pre_order=NULL) {
+dist_2_cluster <- function(x, cutoff.d = NA, cutoff.k = NA, pre_seed=NULL, pre_order=NULL) {
   features = colnames(x)[-1]
   x.mat = as.matrix(x %>% dplyr::select(-1))
   rownames(x.mat) = features
@@ -1592,7 +1624,7 @@ dist_2_cluster = function(x, cutoff.d = NA, cutoff.k = NA, pre_seed=NULL, pre_or
 #### return tibble cols: name, bin, rep, dist to rep
 #### pre_order, tibble, first column is name, ordered, so that front are selected as seeds
 #### support 
-dist_2_cluster_greedy = function(x, cutoff.d, pre_order, pre_cutoff) {
+dist_2_cluster_greedy <- function(x, cutoff.d, pre_order, pre_cutoff) {
   colnames(x)[1] = "UUID";
   colnames(pre_order)[1] = "UUID";
   x = pre_order %>% inner_join(x, by=c("UUID" = "UUID"))
@@ -1682,6 +1714,40 @@ tibble_bind_rows <- function(x, y, fill=0) {
   z
 }
 
+
+#### x sample-feature tibble
+#### p.adjusti.method = c("holm", "hochberg", "hommel", "bonferroni", "BH", "BY", "fdr", "none")
+#### method = c("pearson", "kendall", "spearman")
+co.network.ez <- function(x, method="spearman", p.cutoff = 0.05, p.adjust.methods="BH") {
+  n_feature = ncol(x)-1
+  test1 = corr.test(x %>% select(-1), method=method, adjust=p.adjust.methods)
+  p.t = test1$p %>% t()
+  pair = combn(colnames(x)[-1], 2) 
+  pair_info = tibble(feature1 = pair[1,] %>% as.vector(), #### making pairwise 
+                     feature2 = pair[2,] %>% as.vector(),
+                     d        = test1$r[ lower.tri( test1$r,   diag=F)],   #### mat[lower.tri(mat)] -> output vector from left -> right
+                     p        = test1$p[ lower.tri( test1$p,   diag=F)],  
+                     p.adj    =     p.t[ lower.tri( p.t,       diag=F)])
+  pair_info = pair_info %>% mutate(edge = p.adj <= p.cutoff)
+
+  ## to copy upper to lower triangle try this
+  ## mat.t = mat %>% t()
+  ## mat[lower.tri(mat)] = mat.t[lower.tri(mat.t)]
+  adj.mat = test1$p
+  adj.mat[                  ] = 1
+  adj.mat[ p.mat > p.cutoff ] = 0
+  adj.mat[ lower.tri(adj.mat, diag = T) ] = 0
+
+  g1 = graph.adjacency(adj.mat, mode = "upper", weighted = TRUE, diag = F)
+  #### Finding community structure by multi-level optimization of modularity
+  g1.cls = cluster_louvain(g1)
+  g1.t = tibble(name   = g1.cls$name, idx = 1:n_feature, clstr = g1.cls$membership, degree = igraph::degree(g1))
+  g1.cls.bin = g1.t %>% group_by(clstr) %>% summarise(binsize=length(name)) %>%
+    arrange(desc(binsize)) %>% mutate(clstr_sorted = 1:max(g1.t$clstr))
+  g1.t = g1.t %>% inner_join(g1.cls.bin)
+  
+  list(test=test1, adj.mat=adj.mat, graph=g1, gr=g1.t, pair=pair_info)
+}
 
 
 ######## pathway, network, graph etc
@@ -2100,6 +2166,19 @@ report.rgi_table <- function(subject, ref, cutoff = 1) {
     colnames(y) = c("Antibiotic drug class","Abundance (CPM)", "Population median abundance (CPM)",
                     "Population prevalence (%)", "Percentile in population (%)")
     y
+}
+
+#### read in a mash distence file generated by mash dist
+dist_2_dendro <- function(dist_f) {
+  this.dist = read_tsv(dist_f) %>% select(-1)
+  ## format of taxid|1622269|NZ_KQ236688.1
+  new_names = sub("taxid\\|(\\d+)\\|.+", "\\1", colnames(this.dist), perl=T)  #### to taxid
+  this.dist = this.dist %>% as.matrix()
+  colnames(this.dist) = new_names
+  rownames(this.dist) = new_names
+
+  this.cls = hclust(this.dist.mat %>% as.dist())
+  as.dendrogram(this.cls)
 }
 
 
