@@ -34,6 +34,8 @@ library(pheatmap)
 library(igraph)
 library(qgraph)
 library(psych)
+library(umap)
+
 
 #### limma through bioconductor
 #### if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -178,6 +180,39 @@ feature_nmds_plot <- function(x, topn=ncol(x)-1, sample_group=NULL, legend_title
   else {
     ggplot(y.df, aes(x=MDS1, y=MDS2)) +
     geom_point(size=2.0) + labs(x="NMDS1", y="NMDS2")
+  }
+}
+
+feature_umap_plot <- function(x, topn=ncol(x)-1, sample_group=NULL, legend_title="group", rand.seed=42, draw.ellipse = T, draw.plot=T) {  
+  colnames(x)[1] = "sample_id"
+  set.seed(rand.seed)
+
+  if (topn > ncol(x)-1) {
+    topn = ncol(x)-1
+  }
+  df = x[,1:(topn+1)]
+
+  x.umap = umap(df %>% dplyr::select(-1), method = "naive" )
+  y.df = cbind( tibble(sample_id=x$sample_id), x.umap$layout)
+
+  colnames(y.df)[2] = "Dim.1"
+  colnames(y.df)[3] = "Dim.2"
+
+  if (draw.plot == F) {
+    return(y.df %>% as_tibble())
+  }
+  if (! is.null(sample_group)) {
+    y.df = sample_group %>% dplyr::select(1,2) %>% inner_join(y.df)
+    colnames(y.df)[2] = "group"
+    g = ggplot(y.df, aes(x=Dim.1, y=Dim.2, colour=group)) +
+      geom_point(size=2.0) + labs(x="UMAP1", y="UMAP2") +
+      guides(colour = guide_legend(title=legend_title))
+    if (draw.ellipse) g=g+ stat_ellipse()
+    g
+  }
+  else {
+    ggplot(y.df, aes(x=Dim.1, y=Dim.2)) +
+    geom_point(size=2.0) + labs(x="UMAP1", y="UMAP2")
   }
 }
 
@@ -2108,6 +2143,43 @@ report.enterotype.with.subject <- function(x, sample_group, labx="Principal comp
   g
 }
 
+#### unlike report.enterotype.with.subject
+#### in report.enterotype.umap.with.subject, the subject is within x
+report.enterotype.umap.with.subject <- function(x, sample_group, labx="UMAP-1", laby="UMPA-2",
+                                           subject_id=NULL, ann_text_size=4) {
+  colnames(x)[1] = "sample_id"
+  set.seed(42)
+  df = x
+
+  x.umap = umap( x %>% dplyr::select(-1), method = "naive" )
+  y.df = cbind( tibble(sample_id=x$sample_id), x.umap$layout)
+  y.df = sample_group %>% dplyr::select(1,2) %>% inner_join(y.df)
+
+  colnames(y.df)[2] = "group"
+  colnames(y.df)[3] = "Dim.1"
+  colnames(y.df)[4] = "Dim.2"
+  
+  g = ggplot(y.df, aes(x=Dim.1, y=Dim.2, colour=group)) +
+    geom_point(size=0.8) + scale_colour_manual(values = c("red", "blue", "orange"))
+  #scale_colour_manual(values = mycol(3, pal.set="Dark2"))
+  
+  if (! is.null(subject_id)) {
+    x.trans = y.df %>% filter(sample_id == subject_id) %>% dplyr::select(-sample_id, -group)
+    x_sub = x.trans$Dim.1[1]
+    y_sub = x.trans$Dim.2[1]
+    g = g + geom_point(data = x.trans, aes(x=Dim.1, y=Dim.2), color = "#22BB22", size=1.5) +
+      annotate("text", x = x_sub, y=y_sub, label = " Subject", hjust = 0,color = "#22BB22", size=ann_text_size)
+  }
+  
+  g = g + labs(x=labx, y=laby) +
+    theme_classic() +
+    guides(colour = guide_legend(title="Enterotype")) +
+    theme(axis.ticks.y = element_blank(), axis.text.y = element_blank() ) +
+    theme(axis.ticks.x = element_blank(), axis.text.x = element_blank() )
+  g
+}
+
+
 
 report.species_table <- function(subject, ref, ref_info, cutoff = 0.0001) {
   subject = subject %>% reduce_zero_feature(cutoff = cutoff)
@@ -2177,7 +2249,7 @@ dist_2_dendro <- function(dist_f) {
   colnames(this.dist) = new_names
   rownames(this.dist) = new_names
 
-  this.cls = hclust(this.dist.mat %>% as.dist())
+  this.cls = hclust(this.dist %>% as.dist())
   as.dendrogram(this.cls)
 }
 
