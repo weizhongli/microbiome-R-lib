@@ -19,7 +19,7 @@ library(gridExtra);
 library(ggplot2);
 library(reshape2);
 library(dendextend);
-library(sm);
+### library(sm);
 library(cluster);
 library(plyr);
 library(readr)
@@ -784,12 +784,29 @@ feature_info <- function(x, cutoff=0) {
          mean   = as.vector(apply(x%>%dplyr::select(-1), 2, mean)),
          median = as.vector(apply(x%>%dplyr::select(-1), 2, median)),
          sd     = as.vector(apply(x%>%dplyr::select(-1), 2, sd)),
-         occur  = as.vector(apply(x%>%dplyr::select(-1), 2, function(x){ sum(x>cutoff) } ) ))
+         occur  = as.vector(apply(x%>%dplyr::select(-1), 2, function(x){ sum(x>cutoff) } ) )) %>%
+    mutate(prevalence = occur / nrow(x))
 }
+#### similar as above, but max,min,mean,median,sd are based on x >= cutoff
+feature_info2 <- function(x, cutoff=0) {
+  feature = colnames(x)[-1]
+  tibble(name   = feature,
+         max    = as.vector(apply(x%>%dplyr::select(-1), 2, function(x) { max(    x[x> cutoff]) } )),
+         min    = as.vector(apply(x%>%dplyr::select(-1), 2, function(x) { min(    x[x> cutoff]) } )),
+         mean   = as.vector(apply(x%>%dplyr::select(-1), 2, function(x) { mean(   x[x> cutoff]) } )),
+         median = as.vector(apply(x%>%dplyr::select(-1), 2, function(x) { median( x[x> cutoff]) } )),
+         sd     = as.vector(apply(x%>%dplyr::select(-1), 2, function(x) { sd(     x[x> cutoff]) } )),
+         occur  = as.vector(apply(x%>%dplyr::select(-1), 2, function(x) { sum(     x>cutoff) } ))) %>%
+    mutate(prevalence = occur / nrow(x))
+}
+
 
 #### after certain operation of feature table, e.g. removing some features
 #### re normalize the abundance so that total abs of samples add up to target
-normalize_feature_abs <- function(x, normalize_to=1) {
+#### if logf is not NULL, then perform further transformation
+####    if logf == lop1p, then perform log transformation
+####    normalize_feature_abs(x, normalize_to=10000, logf=log1p)
+normalize_feature_abs <- function(x, normalize_to=1, logf=NULL ) {
   sample_key = colnames(x)[1]
   colnames(x)[1] = "sample_id"
   samples = x$sample_id
@@ -799,6 +816,9 @@ normalize_feature_abs <- function(x, normalize_to=1) {
   sum1[ sum1 == 0 ] = 1
   y = y / sum1
   y = y * normalize_to
+  if (! is.null(logf)) {
+    y = logf(y)
+  }
   y = as_tibble(y) %>% mutate(sample_id = samples)
   y = x %>% dplyr::select(1) %>% inner_join(y)
   colnames(y)[1] = sample_key
@@ -1769,9 +1789,8 @@ co.network.ez <- function(x, method="spearman", p.cutoff = 0.05, p.adjust.method
   ## mat.t = mat %>% t()
   ## mat[lower.tri(mat)] = mat.t[lower.tri(mat.t)]
   adj.mat = test1$p
-  adj.mat[                  ] = 1
-  adj.mat[ p.mat > p.cutoff ] = 0
-  adj.mat[ lower.tri(adj.mat, diag = T) ] = 0
+  adj.mat[                    ] = 1
+  adj.mat[ test1$p > p.cutoff ] = 0
 
   g1 = graph.adjacency(adj.mat, mode = "upper", weighted = TRUE, diag = F)
   #### Finding community structure by multi-level optimization of modularity
