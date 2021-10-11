@@ -825,6 +825,15 @@ normalize_feature_abs <- function(x, normalize_to=1, logf=NULL ) {
   y
 }
 
+#### scale feature across samples (NOT within sample)
+#### for each feature (f), the scaled f = (f - f %>% mean()) / f %>% (sd)
+scale_feature_abs <- function(x) {
+  for (i in 2:ncol(x)) {
+    y = x[[i]]
+    x[[i]] = (y - mean(y))/ sd(y)
+  }
+  x
+}
 
 #### after certain operation of feature table
 #### reorder features so that most abundant feature to the left
