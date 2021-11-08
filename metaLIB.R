@@ -26,6 +26,7 @@ library(readr)
 library(dplyr)
 library(tidyr)
 library(printr)
+library(magrittr)
 library(RColorBrewer)
 library(randomForest)
 library(ROCR)
@@ -310,11 +311,13 @@ feature_heatmap <- function(x, topn=ncol(x)-1, trans_func=NULL, sample_ann=NULL,
     lab_features = substr(tmp$lab %>% as.vector(), 1, max_len)
   }
   if (! is.null(sample_ann)) {
-    sample_ann = x %>% dplyr::select(1) %>% inner_join(sample_ann %>% dplyr::select(1,2)) %>% dplyr::select(-1) %>% as.data.frame()
+    # sample_ann = x %>% dplyr::select(1) %>% inner_join(sample_ann %>% dplyr::select(1,2)) %>% dplyr::select(-1) %>% as.data.frame()
+    sample_ann = x %>% dplyr::select(1) %>% inner_join(sample_ann) %>% dplyr::select(-1) %>% as.data.frame()
     rownames(sample_ann) = samples;
   }
   if (! is.null(feature_ann)) {
-    feature_ann = tibble(name=features) %>% inner_join(feature_ann %>% dplyr::select(1,2)) %>% dplyr::select(-1) %>% as.data.frame()
+    # feature_ann = tibble(name=features) %>% inner_join(feature_ann %>% dplyr::select(1,2)) %>% dplyr::select(-1) %>% as.data.frame()
+    feature_ann = tibble(name=features) %>% inner_join(feature_ann) %>% dplyr::select(-1) %>% as.data.frame()
     rownames(feature_ann) = features;
   }
 
