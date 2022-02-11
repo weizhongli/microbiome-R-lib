@@ -389,7 +389,7 @@ feature_heatmap_samples <- function(x, topn=ncol(x)-1, sample_ann=NULL, sample_l
 #### col.p column for p.value in feature
 #### col.lab column for feature label
 feature_2g_boxplot <- function(x, sample_2_group, feature, col.p = NA, col.lab = NA, 
-                               lab.x="Feature", lab.y="Abundance", subtitle="") {
+                               lab.x="Feature", lab.y="Abundance", subtitle="", drop0=T) {
   colnames(x)[1] = "sample_id"
   colnames(feature)[1] = "name" 
   y = x %>% dplyr::select(c("sample_id", feature$name ))
@@ -398,6 +398,9 @@ feature_2g_boxplot <- function(x, sample_2_group, feature, col.p = NA, col.lab =
   sample_2_group = sample_2_group %>% mutate(group = as.factor(group))
 
   df = gather(y, key=name, value=abundance, -sample_id) %>% inner_join(sample_2_group)
+  if (drop0) {
+    df = df %>% filter(abundance > 0)
+  }
 
   if (! is.na(col.p)) {
     colnames(feature)[col.p] = "p.value"
@@ -1170,75 +1173,8 @@ adj_func <- function(this.p, dist, n_test) {
   }
   this.adj.p
 }
-#### x feature table
-####     1st column must be sample, 
-####     2nd column must be group, as factor
-####     other cols are features
-#### use Kruskal-Wallis Rank Sum Test to find significant features between groups
-#### multiple test correction by permutating groups, see
-####     Sham, Pak C., and Shaun M. Purcell. "Statistical power and significance testing in large-scale genetic studies." 
-####     Nature Reviews Genetics 15.5 (2014): 335.
-#### g_case / g_control: vector of names of case or control
-#### n: number simulation, 
-permutation_multi_group <- function (x, n=1000, rand.seed=42, my.test=kruskal.test) {
-  features = colnames(x)[3:ncol(x)]
-  num_samples = nrow(x)
-  colnames(x)[2] = "GROUP"
-  x = x %>% mutate(GROUP = as.factor(GROUP))
-  grp = x$GROUP
 
-  set.seed(rand.seed)
-  dist.p = numeric(0); #### minmal p distribution
-  for (test_run in 1:n) {
-    zp1.func     = function (v)      {z1=my.test(x[[v]], sample(grp) ); z1$p.value;}
-    zlist = as.vector(sapply(features, FUN=zp1.func))
-    zp.min = min(c(1, zlist[!is.na(zlist)]))
-    dist.p=c(dist.p, zp.min);
-  }
-  dist.p =  dist.p[order(dist.p)];
-
-  zp1.func     = function (v)      {z1=my.test(x[[v]], grp); z1$p.value;}
-  raw.p = as.vector(sapply(features, FUN=zp1.func))
-  p = tibble(name=features, raw.p=raw.p, adjust.p = sapply(raw.p, function(x) {adj_func(x, dist.p, length(features))} ))
-  p %>% arrange( adjust.p)
-}
-
-#### similar to permutation_two_group2, but have three groups
-permutation_three_group <- function (x, group, n=1000, rand.seed=42, my.test=wilcox.test, adjust.method="permutation", paired=F) {
-  n1 = ncol(x)-1
-  colnames(group)[2] = "GROUP"
-  g1 = (x %>% dplyr::select(1) %>% inner_join(group))$GROUP
-  g2 = sort(unique(g1))
-
-  if (length(g2) != 3) return(NULL)
-  sig = list()
-  for (i in 1:2) {
-    gr.A = g2[i]
-    for (j in (i+1):3) {
-      gr.B = g2[j]
-      t.g = group %>% filter(GROUP %in% c(gr.A, gr.B))
-      t.x = x %>% inner_join(t.g %>% dplyr::select(1))
-      t.sig = permutation_two_group2(t.x, t.g, n, rand.seed, my.test, adjust.method, paired=paired) %>% dplyr::select(1, 2, 3, 6) #### un select means
-      ij = paste(i,j,sep=".")
-      colnames(t.sig) = c("name", paste("raw.p", ij, sep="_"), paste("adjust.p", ij, sep="_"), paste("LOG10_FC", ij, sep="_"))
-      sig[[paste("p",ij,sep="")]] = t.sig
-    }
-  }
-  p = tibble(name=colnames(x)[-1]) %>% 
-    inner_join(sig$p1.2) %>% inner_join(sig$p1.3) %>% inner_join(sig$p2.3) %>%
-    mutate(m1 = as.vector(apply(x %>% inner_join(group %>% filter(GROUP == g2[1]) %>% dplyr::select(1)) %>% dplyr::select(-1) , 2, mean)),
-           m2 = as.vector(apply(x %>% inner_join(group %>% filter(GROUP == g2[2]) %>% dplyr::select(1)) %>% dplyr::select(-1) , 2, mean)),
-           m3 = as.vector(apply(x %>% inner_join(group %>% filter(GROUP == g2[3]) %>% dplyr::select(1)) %>% dplyr::select(-1) , 2, mean)),
-           adjust.p.min = pmin(adjust.p_1.2, adjust.p_1.3, adjust.p_2.3),
-           raw.p.min    = pmin(   raw.p_1.2,    raw.p_1.3,    raw.p_2.3) )
-
-  colnames(p)[11] = paste("mean", g2[1], sep=".")
-  colnames(p)[12] = paste("mean", g2[2], sep=".")
-  colnames(p)[13] = paste("mean", g2[3], sep=".")
-  p %>% dplyr::select(1, 15, 14, 11, 12, 13, 2:10) %>% arrange(adjust.p.min)
-}
-
-######## permutation_two_group2 is shorter than the permutation_two_group
+######## permutation_two_group2 is shorter than the permutation_two_group, which was deleted
 #### x feature table
 #### use wilcox.test or t test to find significant features between two groups
 #### multiple test correction by permutating groups, see
@@ -1286,134 +1222,38 @@ permutation_two_group2 <- function (x, group, n=1000, rand.seed=42, my.test=wilc
   p
 }
 
-#### x feature table
-#### use wilcox.test or t test to find significant features between two groups
-#### multiple test correction by permutating groups, see
-####     Sham, Pak C., and Shaun M. Purcell. "Statistical power and significance testing in large-scale genetic studies." 
-####     Nature Reviews Genetics 15.5 (2014): 335.
-#### g_case / g_control: vector of names of case or control
-#### n: number simulation, 
-permutation_two_group <- function (x, g_case, g_control, n=1000, rand.seed=42, my.test=wilcox.test, paired=F,
-                                   mean.names=c("mean.case","mean.control")) {
-  features = colnames(x)[-1]
-  num_samples = nrow(x)
-  num_case    = length(g_case)
-  num_control = length(g_control)
+#### like permutation_two_group2, but use kruskal.test
+#### no paired option
+permutation_multi_group2 <- function (x, group, n=1000, rand.seed=42, my.test=wilcox.test, adjust.method="permutation") {
+  n1 = ncol(x)-1
+  colnames(group)[2] = "GROUP"
+  g1 = (x %>% dplyr::select(1) %>% inner_join(group))$GROUP 
+  g2 = sort(unique(g1))
 
-  set.seed(rand.seed)
-  dist.p = numeric(0); #### minmal p distribution
-  for (test_run in 1:n) {
-    t_all     = sample(1:num_samples)
-    t_case    = t_all[           1:num_case]
-    t_control = t_all[(num_case+1):num_samples]
-
-    zp1.func     = function (v)      {z1=my.test(x[[v]][t_case], x[[v]][t_control], paired=paired); z1$p.value;}
-    zlist = as.vector(sapply(features, FUN=zp1.func))
-    zp.min = min(c(1, zlist[!is.na(zlist)]))
-    dist.p=c(dist.p, zp.min);
-  }
-  dist.p =  dist.p[order(dist.p)];
-
-  # for real case vs control
-  colnames(x)[1] = "UUID"
-  data.case    = x %>% filter(UUID %in% g_case)
-  data.control = x %>% filter(UUID %in% g_control)
-  zp1.func     = function (v)      {z1=my.test(data.case[[v]], data.control[[v]], paired=paired); z1$p.value;}
-  raw.p = as.vector(sapply(features, FUN=zp1.func))
-
-  p = tibble(name        = features, 
-             raw.p       = raw.p, 
-             adjust.p    = sapply(raw.p, function(x) {adj_func(x, dist.p, length(features))} ),
-             mean.case   = as.vector(apply(data.case    %>% dplyr::select(-UUID), 2, mean)),
-             mean.control= as.vector(apply(data.control %>% dplyr::select(-UUID), 2, mean)) )
-  v.min = min(c(p$mean.case, p$mean.control)) / 2;
-  p = p %>% mutate( fc = (mean.case+v.min)/(mean.control+v.min)) %>% arrange( adjust.p)
-  colnames(p)[4] = mean.names[1];
-  colnames(p)[5] = mean.names[2];
-  p
-}
-
-
-
-#### x feature table
-#### use prop.test to find significant features between two groups
-#### multiple test correction by permutating groups, see
-####     Sham, Pak C., and Shaun M. Purcell. "Statistical power and significance testing in large-scale genetic studies." 
-####     Nature Reviews Genetics 15.5 (2014): 335.
-#### g_case / g_control: vector of names of case or control
-#### n: number simulation, 
-permutation_two_group_prop <- function (x, g_case, g_control, n=1000, rand.seed=42, cutoff = 0, my.test=prop.test,
-                                        mean.names=c("prop.case","prop.control")) {
-  features = colnames(x)[-1]
-  num_samples = nrow(x)
-  num_case    = length(g_case)
-  num_control = length(g_control)
-  y = c(num_case, num_control)
-
-  x1 = as_tibble((x %>% dplyr::select(-1)) > cutoff) #### convert to T / F
-  x1 = bind_cols(x %>% dplyr::select(1),  x1)
-
-  set.seed(rand.seed)
-  dist.p = numeric(0); #### minmal p distribution
-  for (test_run in 1:n) {
-    t_all     = sample(1:num_samples)
-    t_case    = t_all[           1:num_case]
-    t_control = t_all[(num_case+1):num_samples]
-
-    zp1.func     = function (v)      {z1=my.test(c(sum(x1[[v]][t_case]), sum(x1[[v]][t_control])), y); z1$p.value;}
-    zlist = as.vector(sapply(features, FUN=zp1.func))
-    zp.min = min(c(1, zlist[!is.na(zlist)]))
-    dist.p=c(dist.p, zp.min);
-  }
-  dist.p =  dist.p[order(dist.p)];
-
-  # for real case vs control
-  colnames(x1)[1] = "UUID"
-  data.case    = x1 %>% filter(UUID %in% g_case)
-  data.control = x1 %>% filter(UUID %in% g_control)
-  zp1.func     = function (v)      {z1=my.test(c(sum(data.case[[v]]), sum(data.control[[v]])), y); z1$p.value;}
-  raw.p = as.vector(sapply(features, FUN=zp1.func))
-
-  p = tibble(name        = features, 
-             raw.p       = raw.p,
-             adjust.p    = sapply(raw.p, function(x) {adj_func(x, dist.p, length(features))} ),
-             prop.case   = as.vector(apply(data.case    %>% dplyr::select(-UUID), 2, sum)) / num_case,
-             prop.control= as.vector(apply(data.control %>% dplyr::select(-UUID), 2, sum)) / num_control)
-  colnames(p)[4] = mean.names[1];
-  colnames(p)[5] = mean.names[2];
-  p %>% arrange( adjust.p)
-}
-
-#### pairwise testing
-#### x long format tibble
-#### first column group
-#### second column value
-pairwise_multi_group_test <- function(x, my.test=wilcox.test) {
-  colnames(x)[1] = "group"
-  colnames(x)[2] = "value"
-  x = x %>% mutate(group = as.factor(group))
-  gr = levels(x$group)
-  len = length(gr)
-
-  g1lab = character(0)
-  g2lab = character(0)
-  p = numeric(0)
-
-  for (i in 1:(len-1)) {
-    g1 = gr[i]
-    v1 = (x %>% filter(group == g1))$value
-    for (j in (i+1):len) {
-      g2 = gr[j]
-      v2 = (x %>% filter(group == g2))$value
-      zp = my.test(v1, v2)
-      if (! is.na(zp$p.value)) {
-        g1lab = c(g1lab, g1)
-        g2lab = c(g2lab, g2)
-        p     = c(p, zp$p.value)
-      }
+  if (adjust.method == "permutation") {
+    set.seed(rand.seed)
+    dist.p = numeric(0); #### minmal p distribution
+    for (test_run in 1:n) {
+      zlist = as.vector( sapply( x %>% dplyr::select(-1), function(i) my.test(i ~ sample(g1))$p.value) )
+      zp.min = min(c(1, zlist[!is.na(zlist)]))
+      dist.p=c(dist.p, zp.min);
     }
+    dist.p =  dist.p[order(dist.p)];
   }
-  tibble(group1 = g1lab, group2=g2lab, p.value=p) %>% arrange(p.value)
+  
+  # for real case vs control
+  raw.p = as.vector(sapply( x %>% dplyr::select(-1), function(i) my.test(i ~ g1)$p.value) )
+  if (adjust.method == "permutation") {
+    p.adj = sapply(raw.p, function(x) {adj_func(x, dist.p, n1)} )
+  } 
+  else {
+    p.adj = p.adjust(raw.p, method=adjust.method)
+  }
+
+  p = tibble(name     = colnames(x)[-1],
+             raw.p    = raw.p,
+             adjust.p = p.adj) %>% arrange( adjust.p)
+  p
 }
 
 
