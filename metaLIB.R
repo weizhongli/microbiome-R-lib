@@ -79,7 +79,9 @@ mycol.s0 <- function(topn, pal.set = "Dark2") {
   col1
 }
 
-#### Set1, Set2, Set3, Dark2, Accent
+#### Qualitative palettes: Accent, Dark2, Paired, Pastel1, Pastel2, Set1, Set2, Set3
+#### Sequential palettes: Blues, BuGn, BuPu, GnBu, Greens, Greys, Oranges, OrRd, PuBu, PuBuGn, PuRd, Purples, RdPu, Reds, YlGn, YlGnBu YlOrBr, YlOrRd
+#### Diverging palettes: BrBG, PiYG, PRGn, PuOr, RdBu, RdGy, RdYlBu, RdYlGn, Spectral
 mycol <- function(topn, pal.set = "Dark2") {
   n = brewer.pal.info[pal.set, "maxcolors"]
   m = 1 + as.integer(topn / n) + c(1,0)[ 1+ as.integer( topn%%n > 0) ]
@@ -710,7 +712,7 @@ read_general_tibble <- function(file, key_col =1, order_species_by=sum) {
 }
 
 #### read taxon tables converted from otu table and taxonomy by git/ngomicswf/NGS-tools/JCVI/jcvi-otu-to-tax.pl
-read_taxon_tibble_16S <- function (dir, ranks=c("phylum", "genus", "species"), cutoff_abs=0, order_species_by=sum, file_prefix="taxon-16s") {
+read_taxon_tibble_16S <- function (dir, ranks=c("phylum", "genus", "species"), cutoff_abs=0, order_species_by=sum, file_prefix="taxon-16s", file_suffix="txt") {
   col_start = list();
   col_start[["phylum"]]  = 2;
   col_start[["class"]]   = 3;
@@ -721,7 +723,7 @@ read_taxon_tibble_16S <- function (dir, ranks=c("phylum", "genus", "species"), c
 
   fun_list=list();
   for (tf in ranks) {
-    df   = read_tsv(paste(dir, paste(file_prefix, tf, "txt", sep="."), sep="/"))
+    df   = read_tsv(paste(dir, paste(file_prefix, tf, file_suffix, sep="."), sep="/"))
     colnames(df)[ col_start[[tf]] -1 ] = 'name'
     df  = df %>% group_by(name) %>% filter(row_number() == 1) %>% ungroup()
     cols = colnames(df)
